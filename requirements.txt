@@ -1,0 +1,4 @@
+discord.py[voice]
+ollama
+ffmpeg-python
+dotenv-python
