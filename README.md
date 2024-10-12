@@ -11,7 +11,7 @@ Bob can also respond to specific message content based on phrases found in other
 To use Bob, add a .env file with the following:
 ```
 DISCORD_TOKEN=[your-discord-token]
-SYSTEM_PROMPT="[The system prompt, which guides you AI in how it should act]"
+SYSTEM_PROMPT="[The system prompt, which guides your AI in how it should act]"
 ```
 ## The System Prompt
 The System Prompt should be simple, and should direct the AI as to exactly how it should act. In my experience, Bob may output the entire system prompt, so do not put anything in here you do not want users to see (this may also be a skill issue on my part).
