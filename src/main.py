@@ -74,7 +74,7 @@ class DiscordClient(discord.Client):
         logging.info(f"Request to join VC from {message.author} in {message.guild}")
         voice_lines = os.listdir("src/audio")
 
-        if len(voice_lines == 0): 
+        if len(voice_lines) == 0: 
             return
 
         channel_list = message.guild.voice_channels
