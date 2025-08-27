@@ -2,20 +2,25 @@
 import ollama
 import discord
 import os
-import datetime
+import ffmpeg
 import math
 import random
 import asyncio
-
 import json
+import logging
+
+# Select the model to use in Ollama
+MODEL = "llama2-uncensored"
+
+# Configure logging
+logging.basicConfig(format="{asctime}\t{levelname}\n\t{message}", style="{", datefmt="%d/%m/%Y %H:%M:%S.%f"[:-3])
+logging.info("Bot started")
 
 # Audio related initialisation
-import ffmpeg
-
 # Scan the audio directory for possible audio files to use when the bot joins vc.
 # These reload whenever the bot is called to vc.
 voice_lines = os.listdir("src/audio")
-print(f"Current possible voice lines: {voice_lines}")
+logging.info(f"Current possible voice lines: {voice_lines}")
 
 # Do dotenv stuff. System prompt is in dotenv.
 from dotenv import load_dotenv
@@ -28,15 +33,14 @@ class DiscordClient(discord.Client):
     system_prompt = os.getenv('SYSTEM_PROMPT')
     
     async def on_ready(self):
-        print(f'Logged in as {self.user} (ID: {self.user.id})')
-        print(f'System Prompt: {self.system_prompt}')
-        print('------')
+        logging.info(f'Logged in as {self.user} (ID: {self.user.id})')
+        logging.info(f'System Prompt: {self.system_prompt}')
 
     # When a message is received.
     async def on_message(self, message):
         # DO NOT RESPOND TO ITSELF
         if message.author == client.user:
-            print("Message not relavent as it was sent by me")
+            logging.info("Message received. Sender: ME. Ignoring to prevent loop.")
             return
         
         # Check user defined phrases from the src/phrases.json file for specific response phrases. 
@@ -59,7 +63,7 @@ class DiscordClient(discord.Client):
 
         for phrase in phrases["phrases"]:
             if phrase["phrase"] in message.content.lower():
-                print(f"Phrase {(phrase['phrase'])} found in message from {message.author} to {message.channel}.")
+                logging.info(f"Phrase {(phrase['phrase'])} found in message from {message.author} to {message.channel}.")
                 await message.channel.send(phrase["response"])
                 return True
             
@@ -67,8 +71,11 @@ class DiscordClient(discord.Client):
     
     # Small issue, playing audio is not asyncronous, therefore keep audio snippets short so ai generation doesnt kill itself when it gets audio
     async def join_vc(self, message):
-        print(f"Request to join VC from {message.author} in {message.guild}")
+        logging.info(f"Request to join VC from {message.author} in {message.guild}")
         voice_lines = os.listdir("src/audio")
+
+        if len(voice_lines == 0): 
+            return
 
         channel_list = message.guild.voice_channels
 
@@ -78,7 +85,7 @@ class DiscordClient(discord.Client):
             if (len(channel_list[i].members) > channel_to_join[1]):
                 channel_to_join = [i, len(channel_list[i].members)]
 
-        print(f"Joining Channel {channel_list[channel_to_join[0]].id}")
+        logging.info(f"Joining Channel {channel_list[channel_to_join[0]].name} (ID: {channel_list[channel_to_join[0]].id})")
 
         # Actually join the VC
         voice_client = await channel_list[channel_to_join[0]].connect()
@@ -87,11 +94,15 @@ class DiscordClient(discord.Client):
         audio = f"src/audio/{random.choice(voice_lines)}"
         source = await discord.FFmpegOpusAudio.from_probe(audio)
 
+        logging.info(f"Playing audio file {audio}")
+
         # Wait a second after joining, then play the file, then wait a second, then disconnect.
         await asyncio.sleep(0.5)
-        voice_client.play(source, bandwidth='medium', bitrate=32)
+        await voice_client.play(source, bandwidth='medium', bitrate=32) # TODO: confirm this works
         await asyncio.sleep(float(ffmpeg.probe(audio)['format']['duration']) + 0.5) 
         await voice_client.disconnect()
+
+        logging.info(f"Disconnected from VC {channel_list[channel_to_join[0].name]} (ID: channel_list[channel_to_join[0]].name)")
 
     async def send_generated_message(self, message) -> None:        
         # Reload dotenv to update system_prompt
@@ -99,7 +110,7 @@ class DiscordClient(discord.Client):
         self.system_prompt = os.getenv('SYSTEM_PROMPT')
 
         # Replace his user.id string with his name for the prompt.
-        print(f'{datetime.datetime.now()} INFO \t {message.author} sent a message mentioning the bot\n\tMessage: {message.content}\n\t{message}')
+        logging.info(f'{message.author} sent a message in {message.channel.name} (ID: {message.channel.id}) mentioning the bot\n\tMessage: {message.content}\n\t{message}')
 
         messages = [{"role": "User", "content": message.content}]
         reply = message 
@@ -115,7 +126,7 @@ class DiscordClient(discord.Client):
 
             # Fill in conversation details.
             if reply.author == client.user:
-                role = "Assistant"
+                role = "Bob"
             else:
                 role = "User"
 
@@ -129,28 +140,33 @@ class DiscordClient(discord.Client):
         for item in messages:
             item['content'].replace(f'<@!{client.user.id}>', 'Bob')
 
-        print(messages)
+        logging.debug(f"Message chain which the AI will generate from: {messages}")
 
-        # Start typing and generate the message.
-        async with message.channel.typing():
-            response = await generate_chat(messages)
+        try:
+            # Start typing and generate the message.
+            async with message.channel.typing():
+                logging.info(f"Generating response from messages.")
+                response = await generate_chat(messages)
+        except Exception as e:
+            logging.warning(str(e))
 
         # Send the message. It splits the message in multiple parts if its too long, replying to the original on only the first message.
         for part in range(len(response)):
             if response[part] != "":
                 response[part].replace(f'<@!{client.user.id}>', 'Bob') # Double check and be sure only Bob is mentioned.
                 await message.channel.send(response[part], reference=message)
+        logging.info("Message sent")
 
 # Generate a prompt. This does not use the history of the message, only the current message and the system prompt.
 async def generate_message(prompt, system):
-    response = await ollama.AsyncClient().generate(model='llama2-uncensored', prompt=prompt, system=system)
-    print(f'\tResponse: {response}')
+    response = await ollama.AsyncClient().generate(model=MODEL, prompt=prompt, system=system)
+    logging.info(f'\tResponse: {response}')
     return await process_response(response['response'])
 
 # Generate a chat. This uses all messages.
 async def generate_chat(messages):
-    response = await ollama.AsyncClient().chat(model='llama2-uncensored', messages=messages)
-    print(f'\tResponse: {response}')
+    response = await ollama.AsyncClient().chat(model=MODEL, messages=messages)
+    logging.info(f'\tResponse: {response}')
     return await process_response(response['message']['content'])
 
 # Format any responses received from the bot.
