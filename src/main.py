@@ -13,7 +13,7 @@ import logging
 MODEL = "llama2-uncensored"
 
 # Configure logging
-logging.basicConfig(format="{asctime}\t{levelname}\n\t{message}", style="{", datefmt="%d/%m/%Y %H:%M:%S.%f"[:-3])
+logging.basicConfig(level=logging.DEBUG, format="{asctime}\t{levelname}\n\t{message}", style="{", datefmt="%d/%m/%Y %H:%M:%S.%f"[:-3])
 logging.info("Bot started")
 
 # Audio related initialisation
